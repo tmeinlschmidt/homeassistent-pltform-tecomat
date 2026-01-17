@@ -1,0 +1,1 @@
+# Tecomat home-assistant integration

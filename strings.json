@@ -1,0 +1,85 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Tecomat PLC",
+        "description": "Enter the connection details for your Tecomat Foxtrot PLC.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the PLC",
+          "port": "PlcComS communication port (default: 5010)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the PLC",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Entities",
+        "description": "Select which entity type to configure",
+        "menu_options": {
+          "lights": "Lights",
+          "covers": "Covers (Blinds)",
+          "binary_sensors": "Binary Sensors",
+          "sensors": "Sensors",
+          "switches": "Switches",
+          "buttons": "Buttons"
+        }
+      },
+      "lights": {
+        "title": "Configure Lights",
+        "description": "Select PLC variables to use as lights",
+        "data": {
+          "lights": "Light variables"
+        }
+      },
+      "covers": {
+        "title": "Configure Covers",
+        "description": "Configure blinds/covers with UP/DOWN relay pairs",
+        "data": {
+          "cover_up_suffix": "UP variable suffix",
+          "cover_down_suffix": "DOWN variable suffix",
+          "covers": "Cover base names"
+        }
+      },
+      "binary_sensors": {
+        "title": "Configure Binary Sensors",
+        "description": "Select PLC variables to use as binary sensors",
+        "data": {
+          "binary_sensors": "Binary sensor variables"
+        }
+      },
+      "sensors": {
+        "title": "Configure Sensors",
+        "description": "Select PLC variables to use as sensors",
+        "data": {
+          "sensors": "Sensor variables"
+        }
+      },
+      "switches": {
+        "title": "Configure Switches",
+        "description": "Select PLC variables to use as switches",
+        "data": {
+          "switches": "Switch variables"
+        }
+      },
+      "buttons": {
+        "title": "Configure Buttons",
+        "description": "Select PLC variables to use as buttons (momentary triggers)",
+        "data": {
+          "buttons": "Button variables"
+        }
+      }
+    }
+  }
+}
