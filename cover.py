@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.cover import (
+    ATTR_POSITION,
     CoverDeviceClass,
     CoverEntity,
     CoverEntityFeature,
@@ -16,10 +17,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .base import TecoматEntity
 from .const import (
     CONF_COVERS,
-    CONF_COVER_UP_SUFFIX,
-    CONF_COVER_DOWN_SUFFIX,
-    DEFAULT_COVER_UP_SUFFIX,
-    DEFAULT_COVER_DOWN_SUFFIX,
+    CONF_COVER_NAME,
+    CONF_COVER_UP_VAR,
+    CONF_COVER_DOWN_VAR,
+    CONF_COVER_POSITION_VAR,
+    CONF_COVER_TILT_UP_VAR,
+    CONF_COVER_TILT_DOWN_VAR,
 )
 from .coordinator import TecoматDataUpdateCoordinator
 
@@ -34,15 +37,21 @@ async def async_setup_entry(
     """Set up Tecomat covers from a config entry."""
     coordinator: TecoматDataUpdateCoordinator = entry.runtime_data
 
-    # Get configured cover bases and suffixes from options
-    cover_bases = entry.options.get(CONF_COVERS, [])
-    up_suffix = entry.options.get(CONF_COVER_UP_SUFFIX, DEFAULT_COVER_UP_SUFFIX)
-    down_suffix = entry.options.get(CONF_COVER_DOWN_SUFFIX, DEFAULT_COVER_DOWN_SUFFIX)
+    # Get configured covers from options (list of cover config dicts)
+    cover_configs = entry.options.get(CONF_COVERS, [])
 
-    entities = [
-        TecoматCover(coordinator, base, up_suffix, down_suffix)
-        for base in cover_bases
-    ]
+    entities = []
+    for cover_config in cover_configs:
+        if isinstance(cover_config, dict):
+            # New format: dict with individual variable assignments
+            entities.append(TecoматCover(coordinator, cover_config))
+        elif isinstance(cover_config, str):
+            # Legacy format: base name string (for backwards compatibility)
+            # This shouldn't happen with new installations but handle gracefully
+            _LOGGER.warning(
+                "Legacy cover config format detected for '%s'. Please reconfigure covers.",
+                cover_config,
+            )
 
     if entities:
         _LOGGER.info("Adding %d cover entities", len(entities))
@@ -53,29 +62,58 @@ class TecoматCover(TecoматEntity, CoverEntity):
     """Representation of a Tecomat cover (blinds/jalousie)."""
 
     _attr_device_class = CoverDeviceClass.BLIND
-    _attr_supported_features = (
-        CoverEntityFeature.OPEN
-        | CoverEntityFeature.CLOSE
-        | CoverEntityFeature.STOP
-    )
 
     def __init__(
         self,
         coordinator: TecoматDataUpdateCoordinator,
-        base_name: str,
-        up_suffix: str,
-        down_suffix: str,
+        cover_config: dict[str, str],
     ) -> None:
         """Initialize the cover."""
-        super().__init__(coordinator, base_name, "cover")
+        name = cover_config.get(CONF_COVER_NAME, "Unknown Cover")
+        super().__init__(coordinator, name, "cover")
 
-        self._up_var = f"{base_name}{up_suffix}"
-        self._down_var = f"{base_name}{down_suffix}"
-        self._attr_name = base_name
+        self._up_var = cover_config.get(CONF_COVER_UP_VAR, "")
+        self._down_var = cover_config.get(CONF_COVER_DOWN_VAR, "")
+        self._position_var = cover_config.get(CONF_COVER_POSITION_VAR)
+        self._tilt_up_var = cover_config.get(CONF_COVER_TILT_UP_VAR)
+        self._tilt_down_var = cover_config.get(CONF_COVER_TILT_DOWN_VAR)
+
+        self._attr_name = name
+
+        # Build supported features based on configured variables
+        features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
+
+        if self._tilt_up_var and self._tilt_down_var:
+            features |= CoverEntityFeature.OPEN_TILT | CoverEntityFeature.CLOSE_TILT | CoverEntityFeature.STOP_TILT
+
+        if self._position_var:
+            features |= CoverEntityFeature.SET_POSITION
+
+        self._attr_supported_features = features
+
+    @property
+    def current_cover_position(self) -> int | None:
+        """Return current position of cover (0=closed, 100=open)."""
+        if not self._position_var or self.coordinator.data is None:
+            return None
+        position = self.coordinator.data.get(self._position_var)
+        if position is None:
+            return None
+        # POSIT is typically 0-100 where 0=open, 100=closed
+        # HA expects 0=closed, 100=open, so we invert
+        try:
+            return 100 - int(position)
+        except (ValueError, TypeError):
+            return None
 
     @property
     def is_closed(self) -> bool | None:
         """Return if the cover is closed."""
+        position = self.current_cover_position
+        if position is not None:
+            return position == 0
+
+        # Fall back to checking down/up state
         if self.coordinator.data is None:
             return None
         down_state = self.coordinator.data.get(self._down_var)
@@ -112,6 +150,47 @@ class TecoматCover(TecoматEntity, CoverEntity):
         """Stop the cover."""
         await self.coordinator.async_set_variable(self._up_var, False)
         await self.coordinator.async_set_variable(self._down_var, False)
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        """Move the cover to a specific position."""
+        position = kwargs.get(ATTR_POSITION)
+        if position is None:
+            return
+
+        current = self.current_cover_position
+        if current is None:
+            return
+
+        if position > current:
+            # Need to open more
+            await self.async_open_cover()
+        elif position < current:
+            # Need to close more
+            await self.async_close_cover()
+        # Note: The cover will need to be stopped manually or by the PLC
+        # when it reaches the desired position. For full position control,
+        # the PLC should handle position-based stopping.
+
+    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+        """Open the cover tilt (rotate slats up)."""
+        if not self._tilt_up_var or not self._tilt_down_var:
+            return
+        await self.coordinator.async_set_variable(self._tilt_down_var, False)
+        await self.coordinator.async_set_variable(self._tilt_up_var, True)
+
+    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+        """Close the cover tilt (rotate slats down)."""
+        if not self._tilt_up_var or not self._tilt_down_var:
+            return
+        await self.coordinator.async_set_variable(self._tilt_up_var, False)
+        await self.coordinator.async_set_variable(self._tilt_down_var, True)
+
+    async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
+        """Stop the cover tilt."""
+        if not self._tilt_up_var or not self._tilt_down_var:
+            return
+        await self.coordinator.async_set_variable(self._tilt_up_var, False)
+        await self.coordinator.async_set_variable(self._tilt_down_var, False)
 
     @callback
     def _handle_coordinator_update(self) -> None:

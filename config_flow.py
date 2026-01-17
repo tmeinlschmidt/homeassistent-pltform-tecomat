@@ -18,14 +18,16 @@ from .const import (
     DEFAULT_PORT,
     CONF_LIGHTS,
     CONF_COVERS,
-    CONF_COVER_UP_SUFFIX,
-    CONF_COVER_DOWN_SUFFIX,
+    CONF_COVER_NAME,
+    CONF_COVER_UP_VAR,
+    CONF_COVER_DOWN_VAR,
+    CONF_COVER_POSITION_VAR,
+    CONF_COVER_TILT_UP_VAR,
+    CONF_COVER_TILT_DOWN_VAR,
     CONF_BINARY_SENSORS,
     CONF_SENSORS,
     CONF_SWITCHES,
     CONF_BUTTONS,
-    DEFAULT_COVER_UP_SUFFIX,
-    DEFAULT_COVER_DOWN_SUFFIX,
 )
 from .plccoms import PlcComSClient, PlcComSConnectionError
 
@@ -95,9 +97,7 @@ class TecoматConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                     options={
                         CONF_LIGHTS: [],
-                        CONF_COVERS: [],
-                        CONF_COVER_UP_SUFFIX: DEFAULT_COVER_UP_SUFFIX,
-                        CONF_COVER_DOWN_SUFFIX: DEFAULT_COVER_DOWN_SUFFIX,
+                        CONF_COVERS: [],  # List of cover config dicts
                         CONF_BINARY_SENSORS: [],
                         CONF_SENSORS: [],
                         CONF_SWITCHES: [],
@@ -214,46 +214,133 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_covers(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Configure cover entities (blinds with UP/DN pairs)."""
-        if user_input is not None:
-            new_options = {
-                **self._config_entry.options,
-                CONF_COVERS: user_input.get(CONF_COVERS, []),
-                CONF_COVER_UP_SUFFIX: user_input.get(CONF_COVER_UP_SUFFIX, DEFAULT_COVER_UP_SUFFIX),
-                CONF_COVER_DOWN_SUFFIX: user_input.get(CONF_COVER_DOWN_SUFFIX, DEFAULT_COVER_DOWN_SUFFIX),
-            }
-            return self.async_create_entry(title="", data=new_options)
-
-        # For covers, user selects base names (without UP/DN suffix)
-        # We'll match pairs based on configured suffixes
-        variables = await self._fetch_variables()
-        bool_vars = [v for v in variables if v.get("type", "").upper() == "BOOL"]
-
-        # Find potential cover bases (variables ending with UP suffix)
-        up_suffix = self._config_entry.options.get(CONF_COVER_UP_SUFFIX, DEFAULT_COVER_UP_SUFFIX)
-        cover_bases = set()
-        for v in bool_vars:
-            if v["name"].endswith(up_suffix):
-                cover_bases.add(v["name"][:-len(up_suffix)])
-
-        options = [
-            selector.SelectOptionDict(value=base, label=base)
-            for base in sorted(cover_bases)
-        ]
-
+        """Configure cover entities - show menu to add or manage covers."""
         current_covers = self._config_entry.options.get(CONF_COVERS, [])
-        current_up = self._config_entry.options.get(CONF_COVER_UP_SUFFIX, DEFAULT_COVER_UP_SUFFIX)
-        current_down = self._config_entry.options.get(CONF_COVER_DOWN_SUFFIX, DEFAULT_COVER_DOWN_SUFFIX)
+
+        if user_input is not None:
+            action = user_input.get("action")
+            if action == "add_cover":
+                return await self.async_step_add_cover()
+            if action and action.startswith("delete_"):
+                # Delete a cover by index
+                idx = int(action.split("_")[1])
+                new_covers = [c for i, c in enumerate(current_covers) if i != idx]
+                new_options = {**self._config_entry.options, CONF_COVERS: new_covers}
+                return self.async_create_entry(title="", data=new_options)
+            # Done - return to main menu
+            return await self.async_step_init()
+
+        # Build menu options
+        menu_options = [
+            selector.SelectOptionDict(value="add_cover", label="Add new cover"),
+        ]
+        # Add delete options for existing covers
+        for idx, cover in enumerate(current_covers):
+            cover_name = cover.get(CONF_COVER_NAME, f"Cover {idx + 1}")
+            menu_options.append(
+                selector.SelectOptionDict(value=f"delete_{idx}", label=f"Delete: {cover_name}")
+            )
+        menu_options.append(selector.SelectOptionDict(value="done", label="Done"))
+
+        # Show current covers info
+        description = f"Currently configured covers: {len(current_covers)}"
+        if current_covers:
+            names = [c.get(CONF_COVER_NAME, "Unnamed") for c in current_covers]
+            description += f"\n{', '.join(names)}"
 
         return self.async_show_form(
             step_id="covers",
             data_schema=vol.Schema({
-                vol.Optional(CONF_COVER_UP_SUFFIX, default=current_up): str,
-                vol.Optional(CONF_COVER_DOWN_SUFFIX, default=current_down): str,
-                vol.Optional(CONF_COVERS, default=current_covers): selector.SelectSelector(
+                vol.Required("action"): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=options,
-                        multiple=True,
+                        options=menu_options,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+            }),
+            description_placeholders={"cover_count": str(len(current_covers))},
+        )
+
+    async def async_step_add_cover(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Add a new cover with individual variable selection."""
+        if user_input is not None:
+            # Create cover config dict
+            cover_config = {
+                CONF_COVER_NAME: user_input.get(CONF_COVER_NAME, ""),
+                CONF_COVER_UP_VAR: user_input.get(CONF_COVER_UP_VAR, ""),
+                CONF_COVER_DOWN_VAR: user_input.get(CONF_COVER_DOWN_VAR, ""),
+            }
+            # Add optional fields if provided
+            if user_input.get(CONF_COVER_TILT_UP_VAR):
+                cover_config[CONF_COVER_TILT_UP_VAR] = user_input[CONF_COVER_TILT_UP_VAR]
+            if user_input.get(CONF_COVER_TILT_DOWN_VAR):
+                cover_config[CONF_COVER_TILT_DOWN_VAR] = user_input[CONF_COVER_TILT_DOWN_VAR]
+            if user_input.get(CONF_COVER_POSITION_VAR):
+                cover_config[CONF_COVER_POSITION_VAR] = user_input[CONF_COVER_POSITION_VAR]
+
+            # Add to existing covers
+            current_covers = list(self._config_entry.options.get(CONF_COVERS, []))
+            current_covers.append(cover_config)
+
+            new_options = {**self._config_entry.options, CONF_COVERS: current_covers}
+            return self.async_create_entry(title="", data=new_options)
+
+        # Fetch all BOOL variables for control selection
+        variables = await self._fetch_variables()
+        bool_vars = [v for v in variables if v.get("type", "").upper() == "BOOL"]
+        bool_options = [
+            selector.SelectOptionDict(value=v["name"], label=v["name"])
+            for v in sorted(bool_vars, key=lambda x: x["name"])
+        ]
+
+        # Fetch numeric variables for position (USINT typically 0-100)
+        numeric_types = ("USINT", "INT", "SINT", "UINT")
+        numeric_vars = [v for v in variables if any(v.get("type", "").upper().startswith(t) for t in numeric_types)]
+        position_options = [
+            selector.SelectOptionDict(value="", label="(None)"),
+        ] + [
+            selector.SelectOptionDict(value=v["name"], label=f"{v['name']} ({v.get('type', '?')})")
+            for v in sorted(numeric_vars, key=lambda x: x["name"])
+        ]
+
+        # Add empty option for optional fields
+        optional_bool_options = [
+            selector.SelectOptionDict(value="", label="(None)"),
+        ] + bool_options
+
+        return self.async_show_form(
+            step_id="add_cover",
+            data_schema=vol.Schema({
+                vol.Required(CONF_COVER_NAME): str,
+                vol.Required(CONF_COVER_UP_VAR): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=bool_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(CONF_COVER_DOWN_VAR): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=bool_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_COVER_TILT_UP_VAR, default=""): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=optional_bool_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_COVER_TILT_DOWN_VAR, default=""): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=optional_bool_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_COVER_POSITION_VAR, default=""): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=position_options,
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),

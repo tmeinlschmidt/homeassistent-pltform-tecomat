@@ -14,14 +14,15 @@ from .const import (
     PLATFORMS,
     CONF_LIGHTS,
     CONF_COVERS,
-    CONF_COVER_UP_SUFFIX,
-    CONF_COVER_DOWN_SUFFIX,
+    CONF_COVER_UP_VAR,
+    CONF_COVER_DOWN_VAR,
+    CONF_COVER_POSITION_VAR,
+    CONF_COVER_TILT_UP_VAR,
+    CONF_COVER_TILT_DOWN_VAR,
     CONF_BINARY_SENSORS,
     CONF_SENSORS,
     CONF_SWITCHES,
     CONF_BUTTONS,
-    DEFAULT_COVER_UP_SUFFIX,
-    DEFAULT_COVER_DOWN_SUFFIX,
 )
 from .coordinator import TecoматDataUpdateCoordinator
 from .plccoms import PlcComSConnectionError
@@ -42,12 +43,15 @@ def _collect_variables_from_options(options: dict) -> list[str]:
     for key in (CONF_LIGHTS, CONF_BINARY_SENSORS, CONF_SENSORS, CONF_SWITCHES, CONF_BUTTONS):
         variables.update(options.get(key, []))
 
-    # Add cover variables (need UP and DN suffixes)
-    up_suffix = options.get(CONF_COVER_UP_SUFFIX, DEFAULT_COVER_UP_SUFFIX)
-    down_suffix = options.get(CONF_COVER_DOWN_SUFFIX, DEFAULT_COVER_DOWN_SUFFIX)
-    for cover_base in options.get(CONF_COVERS, []):
-        variables.add(f"{cover_base}{up_suffix}")
-        variables.add(f"{cover_base}{down_suffix}")
+    # Add cover variables from cover config dicts
+    for cover_config in options.get(CONF_COVERS, []):
+        if isinstance(cover_config, dict):
+            # New format: dict with individual variable assignments
+            for var_key in (CONF_COVER_UP_VAR, CONF_COVER_DOWN_VAR, CONF_COVER_POSITION_VAR,
+                           CONF_COVER_TILT_UP_VAR, CONF_COVER_TILT_DOWN_VAR):
+                var_name = cover_config.get(var_key)
+                if var_name:
+                    variables.add(var_name)
 
     return list(variables)
 

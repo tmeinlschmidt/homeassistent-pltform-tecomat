@@ -15,16 +15,18 @@ CONF_AUTO_DISCOVER: Final = "auto_discover"
 # Entity configuration keys (for options flow)
 CONF_LIGHTS: Final = "lights"
 CONF_COVERS: Final = "covers"
-CONF_COVER_UP_SUFFIX: Final = "cover_up_suffix"
-CONF_COVER_DOWN_SUFFIX: Final = "cover_down_suffix"
 CONF_BINARY_SENSORS: Final = "binary_sensors"
 CONF_SENSORS: Final = "sensors"
 CONF_SWITCHES: Final = "switches"
 CONF_BUTTONS: Final = "buttons"
 
-# Default suffixes for cover detection
-DEFAULT_COVER_UP_SUFFIX: Final = "_UP"
-DEFAULT_COVER_DOWN_SUFFIX: Final = "_DN"
+# Cover configuration keys (for individual cover entity)
+CONF_COVER_NAME: Final = "name"
+CONF_COVER_UP_VAR: Final = "up_var"
+CONF_COVER_DOWN_VAR: Final = "down_var"
+CONF_COVER_POSITION_VAR: Final = "position_var"
+CONF_COVER_TILT_UP_VAR: Final = "tilt_up_var"
+CONF_COVER_TILT_DOWN_VAR: Final = "tilt_down_var"
 
 # PLC data types
 PLC_TYPE_BOOL: Final = "BOOL"

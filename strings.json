@@ -44,12 +44,30 @@
         }
       },
       "covers": {
-        "title": "Configure Covers",
-        "description": "Configure blinds/covers with UP/DOWN relay pairs",
+        "title": "Manage Covers",
+        "description": "Add, view, or delete cover (blinds) entities",
         "data": {
-          "cover_up_suffix": "UP variable suffix",
-          "cover_down_suffix": "DOWN variable suffix",
-          "covers": "Cover base names"
+          "action": "Action"
+        }
+      },
+      "add_cover": {
+        "title": "Add New Cover",
+        "description": "Configure a new cover/blinds entity with control variables",
+        "data": {
+          "name": "Cover name",
+          "up_var": "Open/Up variable (BOOL)",
+          "down_var": "Close/Down variable (BOOL)",
+          "tilt_up_var": "Tilt open/rotate up variable (optional)",
+          "tilt_down_var": "Tilt close/rotate down variable (optional)",
+          "position_var": "Position feedback variable (optional)"
+        },
+        "data_description": {
+          "name": "Display name for this cover",
+          "up_var": "Variable to trigger opening (e.g., WEBUP or GTSAP1_SHUTTER_UP_CONTROL)",
+          "down_var": "Variable to trigger closing (e.g., WEBDW or GTSAP1_SHUTTER_DOWN_CONTROL)",
+          "tilt_up_var": "Variable for tilt/rotation up (e.g., GTSAP1_SHUTTER_ROTUP_CONTROL)",
+          "tilt_down_var": "Variable for tilt/rotation down (e.g., GTSAP1_SHUTTER_ROTDOWN_CONTROL)",
+          "position_var": "Variable providing position feedback (0-100)"
         }
       },
       "binary_sensors": {
