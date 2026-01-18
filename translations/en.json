@@ -50,9 +50,9 @@
           "action": "Action"
         }
       },
-      "add_cover": {
-        "title": "Add New Cover",
-        "description": "Configure a new cover/blinds entity with control variables",
+      "edit_cover": {
+        "title": "Configure Cover",
+        "description": "Configure cover/blinds entity with control variables. Type to search variables.",
         "data": {
           "name": "Cover name",
           "up_var": "Open/Up variable (BOOL)",

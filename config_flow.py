@@ -138,6 +138,7 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
         """Initialize options flow."""
         self._config_entry = config_entry
         self._available_variables: list[dict[str, str]] = []
+        self._editing_cover_idx: int | None = None  # Track which cover we're editing
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -220,7 +221,12 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             action = user_input.get("action")
             if action == "add_cover":
-                return await self.async_step_add_cover()
+                self._editing_cover_idx = None
+                return await self.async_step_edit_cover()
+            if action and action.startswith("edit_"):
+                # Edit a cover by index
+                self._editing_cover_idx = int(action.split("_")[1])
+                return await self.async_step_edit_cover()
             if action and action.startswith("delete_"):
                 # Delete a cover by index
                 idx = int(action.split("_")[1])
@@ -232,9 +238,9 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
 
         # Build menu options
         menu_options = [
-            selector.SelectOptionDict(value="add_cover", label="Add new cover"),
+            selector.SelectOptionDict(value="add_cover", label="+ Add new cover"),
         ]
-        # Add delete options for existing covers
+        # Add edit and delete options for existing covers
         for idx, cover in enumerate(current_covers):
             if isinstance(cover, dict):
                 cover_name = cover.get(CONF_COVER_NAME, f"Cover {idx + 1}")
@@ -242,20 +248,12 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
                 # Legacy format: cover is a string (base name)
                 cover_name = str(cover)
             menu_options.append(
+                selector.SelectOptionDict(value=f"edit_{idx}", label=f"Edit: {cover_name}")
+            )
+            menu_options.append(
                 selector.SelectOptionDict(value=f"delete_{idx}", label=f"Delete: {cover_name}")
             )
         menu_options.append(selector.SelectOptionDict(value="done", label="Done"))
-
-        # Show current covers info
-        description = f"Currently configured covers: {len(current_covers)}"
-        if current_covers:
-            names = []
-            for c in current_covers:
-                if isinstance(c, dict):
-                    names.append(c.get(CONF_COVER_NAME, "Unnamed"))
-                else:
-                    names.append(str(c))
-            description += f"\n{', '.join(names)}"
 
         return self.async_show_form(
             step_id="covers",
@@ -267,13 +265,21 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
                     )
                 ),
             }),
-            description_placeholders={"cover_count": str(len(current_covers))},
         )
 
-    async def async_step_add_cover(
+    async def async_step_edit_cover(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Add a new cover with individual variable selection."""
+        """Add or edit a cover with individual variable selection."""
+        current_covers = list(self._config_entry.options.get(CONF_COVERS, []))
+        editing = self._editing_cover_idx is not None
+        existing_cover: dict[str, str] = {}
+
+        if editing and 0 <= self._editing_cover_idx < len(current_covers):
+            cover = current_covers[self._editing_cover_idx]
+            if isinstance(cover, dict):
+                existing_cover = cover
+
         if user_input is not None:
             # Create cover config dict
             cover_config = {
@@ -289,11 +295,15 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
             if user_input.get(CONF_COVER_POSITION_VAR):
                 cover_config[CONF_COVER_POSITION_VAR] = user_input[CONF_COVER_POSITION_VAR]
 
-            # Add to existing covers
-            current_covers = list(self._config_entry.options.get(CONF_COVERS, []))
-            current_covers.append(cover_config)
+            if editing:
+                # Update existing cover
+                current_covers[self._editing_cover_idx] = cover_config
+            else:
+                # Add new cover
+                current_covers.append(cover_config)
 
             new_options = {**self._config_entry.options, CONF_COVERS: current_covers}
+            self._editing_cover_idx = None
             return self.async_create_entry(title="", data=new_options)
 
         # Fetch all BOOL variables for control selection
@@ -319,38 +329,52 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
             selector.SelectOptionDict(value="", label="(None)"),
         ] + bool_options
 
+        # Get current values for editing
+        default_name = existing_cover.get(CONF_COVER_NAME, "")
+        default_up = existing_cover.get(CONF_COVER_UP_VAR, "")
+        default_down = existing_cover.get(CONF_COVER_DOWN_VAR, "")
+        default_tilt_up = existing_cover.get(CONF_COVER_TILT_UP_VAR, "")
+        default_tilt_down = existing_cover.get(CONF_COVER_TILT_DOWN_VAR, "")
+        default_position = existing_cover.get(CONF_COVER_POSITION_VAR, "")
+
+        # Use COMBO mode for searchable dropdowns with type-ahead
         return self.async_show_form(
-            step_id="add_cover",
+            step_id="edit_cover",
             data_schema=vol.Schema({
-                vol.Required(CONF_COVER_NAME): str,
-                vol.Required(CONF_COVER_UP_VAR): selector.SelectSelector(
+                vol.Required(CONF_COVER_NAME, default=default_name): str,
+                vol.Required(CONF_COVER_UP_VAR, default=default_up): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=bool_options,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        mode=selector.SelectSelectorMode.COMBO,
+                        custom_value=True,
                     )
                 ),
-                vol.Required(CONF_COVER_DOWN_VAR): selector.SelectSelector(
+                vol.Required(CONF_COVER_DOWN_VAR, default=default_down): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=bool_options,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        mode=selector.SelectSelectorMode.COMBO,
+                        custom_value=True,
                     )
                 ),
-                vol.Optional(CONF_COVER_TILT_UP_VAR, default=""): selector.SelectSelector(
+                vol.Optional(CONF_COVER_TILT_UP_VAR, default=default_tilt_up): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=optional_bool_options,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        mode=selector.SelectSelectorMode.COMBO,
+                        custom_value=True,
                     )
                 ),
-                vol.Optional(CONF_COVER_TILT_DOWN_VAR, default=""): selector.SelectSelector(
+                vol.Optional(CONF_COVER_TILT_DOWN_VAR, default=default_tilt_down): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=optional_bool_options,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        mode=selector.SelectSelectorMode.COMBO,
+                        custom_value=True,
                     )
                 ),
-                vol.Optional(CONF_COVER_POSITION_VAR, default=""): selector.SelectSelector(
+                vol.Optional(CONF_COVER_POSITION_VAR, default=default_position): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=position_options,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        mode=selector.SelectSelectorMode.COMBO,
+                        custom_value=True,
                     )
                 ),
             }),
