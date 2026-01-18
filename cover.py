@@ -249,11 +249,17 @@ class TecoматCover(TecoматEntity, CoverEntity):
             self._target_position = None
 
     async def _send_stop_signal(self, was_opening: bool) -> None:
-        """Send stop signal (opposite direction command)."""
+        """Send stop signal by pulsing the opposite direction."""
         if was_opening:
+            # Was opening, send down to stop
             await self.coordinator.async_set_variable(self._down_var, True)
+            await asyncio.sleep(0.1)
+            await self.coordinator.async_set_variable(self._down_var, False)
         else:
+            # Was closing, send up to stop
             await self.coordinator.async_set_variable(self._up_var, True)
+            await asyncio.sleep(0.1)
+            await self.coordinator.async_set_variable(self._up_var, False)
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         """Open the cover tilt (rotate slats up)."""
