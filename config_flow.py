@@ -236,7 +236,11 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
         ]
         # Add delete options for existing covers
         for idx, cover in enumerate(current_covers):
-            cover_name = cover.get(CONF_COVER_NAME, f"Cover {idx + 1}")
+            if isinstance(cover, dict):
+                cover_name = cover.get(CONF_COVER_NAME, f"Cover {idx + 1}")
+            else:
+                # Legacy format: cover is a string (base name)
+                cover_name = str(cover)
             menu_options.append(
                 selector.SelectOptionDict(value=f"delete_{idx}", label=f"Delete: {cover_name}")
             )
@@ -245,7 +249,12 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
         # Show current covers info
         description = f"Currently configured covers: {len(current_covers)}"
         if current_covers:
-            names = [c.get(CONF_COVER_NAME, "Unnamed") for c in current_covers]
+            names = []
+            for c in current_covers:
+                if isinstance(c, dict):
+                    names.append(c.get(CONF_COVER_NAME, "Unnamed"))
+                else:
+                    names.append(str(c))
             description += f"\n{', '.join(names)}"
 
         return self.async_show_form(
