@@ -150,18 +150,15 @@ class TecoматCover(TecoматEntity, CoverEntity):
         await self.coordinator.async_set_variable(self._down_var, True)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        """Stop the cover by sending the opposite direction command."""
-        # To stop, we send the opposite direction command briefly
-        if self.is_opening:
-            # Currently opening - send down to stop
-            await self.coordinator.async_set_variable(self._down_var, True)
-        elif self.is_closing:
-            # Currently closing - send up to stop
-            await self.coordinator.async_set_variable(self._up_var, True)
-        else:
-            # Not moving - just ensure both are off
-            await self.coordinator.async_set_variable(self._up_var, False)
-            await self.coordinator.async_set_variable(self._down_var, False)
+        """Stop the cover by pulsing down command."""
+        # Cancel any position monitoring task
+        if self._position_task and not self._position_task.done():
+            self._position_task.cancel()
+
+        # Pulse down to stop (works for both directions)
+        await self.coordinator.async_set_variable(self._down_var, True)
+        await asyncio.sleep(0.1)
+        await self.coordinator.async_set_variable(self._down_var, False)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Move the cover to a specific position and stop when reached."""
@@ -250,16 +247,7 @@ class TecoматCover(TecoматEntity, CoverEntity):
 
     async def _send_stop_signal(self, was_opening: bool) -> None:
         """Send stop signal by pulsing the opposite direction."""
-        if was_opening:
-            # Was opening, send down to stop
-            await self.coordinator.async_set_variable(self._down_var, True)
-            await asyncio.sleep(0.1)
-            await self.coordinator.async_set_variable(self._down_var, False)
-        else:
-            # Was closing, send up to stop
-            await self.coordinator.async_set_variable(self._up_var, True)
-            await asyncio.sleep(0.1)
-            await self.coordinator.async_set_variable(self._up_var, False)
+        await self.async_stop_cover()
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         """Open the cover tilt (rotate slats up)."""
