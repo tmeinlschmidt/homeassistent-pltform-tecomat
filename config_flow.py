@@ -345,35 +345,35 @@ class TecoматOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(CONF_COVER_UP_VAR, default=default_up): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=bool_options,
-                        mode=selector.SelectSelectorMode.COMBO,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
                         custom_value=True,
                     )
                 ),
                 vol.Required(CONF_COVER_DOWN_VAR, default=default_down): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=bool_options,
-                        mode=selector.SelectSelectorMode.COMBO,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
                         custom_value=True,
                     )
                 ),
                 vol.Optional(CONF_COVER_TILT_UP_VAR, default=default_tilt_up): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=optional_bool_options,
-                        mode=selector.SelectSelectorMode.COMBO,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
                         custom_value=True,
                     )
                 ),
                 vol.Optional(CONF_COVER_TILT_DOWN_VAR, default=default_tilt_down): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=optional_bool_options,
-                        mode=selector.SelectSelectorMode.COMBO,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
                         custom_value=True,
                     )
                 ),
                 vol.Optional(CONF_COVER_POSITION_VAR, default=default_position): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=position_options,
-                        mode=selector.SelectSelectorMode.COMBO,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
                         custom_value=True,
                     )
                 ),
