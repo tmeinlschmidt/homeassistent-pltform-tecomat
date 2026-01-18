@@ -1,10 +1,12 @@
 """Cover platform for Tecomat integration (blinds/jalousie)."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from homeassistant.components.cover import (
+    ATTR_POSITION,
     CoverDeviceClass,
     CoverEntity,
     CoverEntityFeature,
@@ -78,13 +80,17 @@ class TecoматCover(TecoматEntity, CoverEntity):
         self._tilt_down_var = cover_config.get(CONF_COVER_TILT_DOWN_VAR)
 
         self._attr_name = name
+        self._position_task: asyncio.Task | None = None
+        self._target_position: int | None = None
 
         # Build supported features based on configured variables
-        # Note: Position variable is read-only for display, not control
         features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
 
         if self._tilt_up_var and self._tilt_down_var:
             features |= CoverEntityFeature.OPEN_TILT | CoverEntityFeature.CLOSE_TILT | CoverEntityFeature.STOP_TILT
+
+        if self._position_var:
+            features |= CoverEntityFeature.SET_POSITION
 
         self._attr_supported_features = features
 
@@ -156,6 +162,98 @@ class TecoматCover(TecoматEntity, CoverEntity):
             # Not moving - just ensure both are off
             await self.coordinator.async_set_variable(self._up_var, False)
             await self.coordinator.async_set_variable(self._down_var, False)
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        """Move the cover to a specific position and stop when reached."""
+        position = kwargs.get(ATTR_POSITION)
+        if position is None:
+            return
+
+        # Cancel any existing position task
+        if self._position_task and not self._position_task.done():
+            self._position_task.cancel()
+            try:
+                await self._position_task
+            except asyncio.CancelledError:
+                pass
+
+        current = self.current_cover_position
+        if current is None:
+            return
+
+        if position == current:
+            return  # Already at target
+
+        self._target_position = position
+        opening = position > current
+
+        # Start movement
+        if opening:
+            await self.async_open_cover()
+        else:
+            await self.async_close_cover()
+
+        # Start monitoring task
+        self._position_task = asyncio.create_task(
+            self._monitor_position(position, opening)
+        )
+
+    async def _monitor_position(self, target: int, opening: bool) -> None:
+        """Monitor position and stop when target is reached."""
+        tolerance = 2  # Stop within 2% of target
+        timeout = 120  # Max 2 minutes
+        poll_interval = 0.5  # Check every 500ms
+
+        try:
+            elapsed = 0.0
+            while elapsed < timeout:
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+
+                # Refresh data from coordinator
+                await self.coordinator.async_request_refresh()
+
+                current = self.current_cover_position
+                if current is None:
+                    continue
+
+                # Check if we've reached or passed target
+                if opening:
+                    # Opening: stop when current >= target
+                    if current >= target - tolerance:
+                        _LOGGER.debug(
+                            "Cover %s reached target %d (current: %d), stopping",
+                            self._attr_name, target, current
+                        )
+                        await self._send_stop_signal(opening)
+                        break
+                else:
+                    # Closing: stop when current <= target
+                    if current <= target + tolerance:
+                        _LOGGER.debug(
+                            "Cover %s reached target %d (current: %d), stopping",
+                            self._attr_name, target, current
+                        )
+                        await self._send_stop_signal(opening)
+                        break
+
+                # Check if movement stopped (no longer opening/closing)
+                if not self.is_opening and not self.is_closing:
+                    _LOGGER.debug("Cover %s stopped moving", self._attr_name)
+                    break
+
+        except asyncio.CancelledError:
+            _LOGGER.debug("Position monitoring cancelled for %s", self._attr_name)
+            raise
+        finally:
+            self._target_position = None
+
+    async def _send_stop_signal(self, was_opening: bool) -> None:
+        """Send stop signal (opposite direction command)."""
+        if was_opening:
+            await self.coordinator.async_set_variable(self._down_var, True)
+        else:
+            await self.coordinator.async_set_variable(self._up_var, True)
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         """Open the cover tilt (rotate slats up)."""
