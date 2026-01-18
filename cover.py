@@ -5,7 +5,6 @@ import logging
 from typing import Any
 
 from homeassistant.components.cover import (
-    ATTR_POSITION,
     CoverDeviceClass,
     CoverEntity,
     CoverEntityFeature,
@@ -81,13 +80,11 @@ class TecoматCover(TecoматEntity, CoverEntity):
         self._attr_name = name
 
         # Build supported features based on configured variables
+        # Note: Position variable is read-only for display, not control
         features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
 
         if self._tilt_up_var and self._tilt_down_var:
             features |= CoverEntityFeature.OPEN_TILT | CoverEntityFeature.CLOSE_TILT | CoverEntityFeature.STOP_TILT
-
-        if self._position_var:
-            features |= CoverEntityFeature.SET_POSITION
 
         self._attr_supported_features = features
 
@@ -147,29 +144,18 @@ class TecoматCover(TecoматEntity, CoverEntity):
         await self.coordinator.async_set_variable(self._down_var, True)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        """Stop the cover."""
-        await self.coordinator.async_set_variable(self._up_var, False)
-        await self.coordinator.async_set_variable(self._down_var, False)
-
-    async def async_set_cover_position(self, **kwargs: Any) -> None:
-        """Move the cover to a specific position."""
-        position = kwargs.get(ATTR_POSITION)
-        if position is None:
-            return
-
-        current = self.current_cover_position
-        if current is None:
-            return
-
-        if position > current:
-            # Need to open more
-            await self.async_open_cover()
-        elif position < current:
-            # Need to close more
-            await self.async_close_cover()
-        # Note: The cover will need to be stopped manually or by the PLC
-        # when it reaches the desired position. For full position control,
-        # the PLC should handle position-based stopping.
+        """Stop the cover by sending the opposite direction command."""
+        # To stop, we send the opposite direction command briefly
+        if self.is_opening:
+            # Currently opening - send down to stop
+            await self.coordinator.async_set_variable(self._down_var, True)
+        elif self.is_closing:
+            # Currently closing - send up to stop
+            await self.coordinator.async_set_variable(self._up_var, True)
+        else:
+            # Not moving - just ensure both are off
+            await self.coordinator.async_set_variable(self._up_var, False)
+            await self.coordinator.async_set_variable(self._down_var, False)
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         """Open the cover tilt (rotate slats up)."""
